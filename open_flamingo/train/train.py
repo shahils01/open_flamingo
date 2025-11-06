@@ -299,13 +299,18 @@ def main():
         if args.rank == 0:
             print(f"Loading checkpoint from {args.resume_from_checkpoint}")
         checkpoint = torch.load(args.resume_from_checkpoint, map_location="cpu")
+        print("Finished loading checkpoint")
         msd = checkpoint["model_state_dict"]
+        print("Finished loading msd")
         msd = {k.replace("module.", ""): v for k, v in msd.items()}
+        print("Finished replacing msd")
+
         resume_from_epoch = checkpoint["epoch"] + 1
 
         # for fsdp, only one rank needs to load the state dict
         if not args.fsdp or args.rank == 0:
             model.load_state_dict(msd, False)
+            print("Finished loading model msd")
 
     # Initialize FSDP / DDP, and ensure the model is on GPU
     print(f"Initializing distributed training with {args.world_size} GPUs.")
@@ -469,12 +474,12 @@ def main():
             tokenizer=tokenizer,
             optimizer=optimizer,
             lr_scheduler=lr_scheduler,
+            # mmc4_loader=mmc4_loader,
             laion_loader=laion_loader,
-            mmc4_loader=mmc4_loader,
             device_id=device_id,
             wandb=wandb,
         )
-        save_checkpoint(ddp_model, optimizer, lr_scheduler, epoch, args)
+        # save_checkpoint(ddp_model, optimizer, lr_scheduler, epoch, args)
 
     # save final checkpoint
     save_checkpoint(ddp_model, optimizer, lr_scheduler, epoch, args)

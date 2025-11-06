@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import torchvision
 import webdataset as wds
-from PIL import Image
+from PIL import Image, ImageFile
 import base64
 from scipy.optimize import linear_sum_assignment
 
@@ -21,6 +21,7 @@ from data_utils import *
 Image.MAX_IMAGE_PIXELS = 1000000000
 N_CHANNELS = 3
 MIN_KB = 10
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 _SHARD_SHUFFLE_SIZE = 2000
 _SHARD_SHUFFLE_INITIAL = 500
 _SAMPLE_SHUFFLE_SIZE = 5000
@@ -330,6 +331,10 @@ def get_mmc4_dataset(args, image_processor, tokenizer, epoch=0, floor=False):
         ]
     )
 
+    # Call right before you append wds.to_tuple(...) / batching
+    # print("Inspecting raw pipeline outputs for MMC4 Dataset(before to_tuple/batch):")
+    # inspect_pipeline_samples(pipeline, max_items=5)
+
     pipeline.extend(
         [
             wds.to_tuple("json", handler=log_and_continue),
@@ -367,6 +372,23 @@ def get_mmc4_dataset(args, image_processor, tokenizer, epoch=0, floor=False):
     dataloader.num_samples = num_samples
 
     return DataInfo(dataloader=dataloader, shared_epoch=shared_epoch)
+
+
+def inspect_pipeline_samples(pipeline, max_items=5):
+    tmp_ds = wds.DataPipeline(*pipeline)
+    it = iter(tmp_ds)
+    for i in range(max_items):
+        try:
+            s = next(it)  # dict-like: {'__key__', 'jpg' or 'png' or 'jpeg', 'txt', ...}
+        except StopIteration:
+            print("Pipeline produced no more samples.")
+            break
+        except Exception as e:
+            print("Error while iterating pipeline:", repr(e))
+            break
+        print(f"[{i}] keys:", list(s.keys()))
+        if "txt" in s:
+            print("  caption bytes preview:", s["txt"][:120])
 
 
 def get_laion_dataset(args, image_processor, tokenizer, epoch=0, floor=False):
@@ -427,6 +449,10 @@ def get_laion_dataset(args, image_processor, tokenizer, epoch=0, floor=False):
             ),
         ]
     )
+
+    # Call right before you append wds.to_tuple(...) / batching
+    # print("Inspecting raw pipeline outputs for LAION Dataset(before to_tuple/batch):")
+    # inspect_pipeline_samples(pipeline, max_items=5)
 
     pipeline.extend(
         [

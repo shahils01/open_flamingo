@@ -47,8 +47,8 @@ def train_one_epoch(
     args,
     model,
     epoch,
+    # mmc4_loader,
     laion_loader,
-    mmc4_loader,
     tokenizer,
     optimizer,
     lr_scheduler,
@@ -57,11 +57,13 @@ def train_one_epoch(
 ):
     # setup loaders
     num_batches_per_epoch_laion = laion_loader.num_batches
-    num_batches_per_epoch_mmc4 = mmc4_loader.num_batches
-    assert (
-        num_batches_per_epoch_laion == num_batches_per_epoch_mmc4
-    ), "Number of batches in laion and mmc4 datasets must be the same"
-    num_batches_per_epoch = num_batches_per_epoch_mmc4
+    # num_batches_per_epoch_mmc4 = mmc4_loader.num_batches
+
+    # assert (
+    #     num_batches_per_epoch_laion == num_batches_per_epoch_mmc4
+    # ), "Number of batches in laion and mmc4 datasets must be the same"
+
+    num_batches_per_epoch = num_batches_per_epoch_laion
     total_training_steps = num_batches_per_epoch * args.num_epochs
 
     autocast = get_autocast(
@@ -74,6 +76,7 @@ def train_one_epoch(
     endofchunk_token_id = tokenizer("<|endofchunk|>", add_special_tokens=False)[
         "input_ids"
     ][-1]
+
     model.train()
 
     # setup logging
@@ -82,8 +85,14 @@ def train_one_epoch(
     end = time.time()
 
     # loop through dataloader
-    for num_steps, (batch_laion, batch_mmc4) in tqdm(
-        enumerate(zip(laion_loader, mmc4_loader)),
+    # for num_steps, batch_laion, batch_mmc4 in tqdm(
+    #     enumerate(zip(laion_loader, mmc4_loader)),
+    #     disable=args.rank != 0,
+    #     total=total_training_steps,
+    #     initial=(epoch * num_batches_per_epoch),
+    # ):
+    for num_steps, batch_laion in tqdm(
+        enumerate(laion_loader),
         disable=args.rank != 0,
         total=total_training_steps,
         initial=(epoch * num_batches_per_epoch),
@@ -118,58 +127,58 @@ def train_one_epoch(
         (divided_loss_laion * args.loss_multiplier_laion).backward()
 
         #### MMC4 FORWARD PASS ####
-        images = batch_mmc4[0].to(device_id, dtype=cast_dtype, non_blocking=True)
-        images = rearrange(images, "b (t f) c h w -> b t f c h w", f=1)
-        input_ids = torch.stack([x[0] for x in batch_mmc4[1]]).squeeze(1)
-        attention_mask = torch.stack([x[1] for x in batch_mmc4[1]]).squeeze(1)
+        # images = batch_mmc4[0].to(device_id, dtype=cast_dtype, non_blocking=True)
+        # images = rearrange(images, "b (t f) c h w -> b t f c h w", f=1)
+        # input_ids = torch.stack([x[0] for x in batch_mmc4[1]]).squeeze(1)
+        # attention_mask = torch.stack([x[1] for x in batch_mmc4[1]]).squeeze(1)
 
-        # set up labels; language model is expected to handle shifting
-        labels = input_ids.clone()
-        labels[labels == tokenizer.pad_token_id] = -100
-        for i in range(labels.shape[0]):
-            # remove loss for any token before the first <image> token
-            label_idx = 0
-            while (
-                label_idx < labels.shape[1] and labels[i][label_idx] != media_token_id
-            ):
-                labels[i][label_idx] = -100
-                label_idx += 1
+        # # set up labels; language model is expected to handle shifting
+        # labels = input_ids.clone()
+        # labels[labels == tokenizer.pad_token_id] = -100
+        # for i in range(labels.shape[0]):
+        #     # remove loss for any token before the first <image> token
+        #     label_idx = 0
+        #     while (
+        #         label_idx < labels.shape[1] and labels[i][label_idx] != media_token_id
+        #     ):
+        #         labels[i][label_idx] = -100
+        #         label_idx += 1
 
-            # get index of all endofchunk tokens in the sequence
-            endofchunk_idxs = torch.where(labels[i] == endofchunk_token_id)[0]
-            for endofchunk_idx in endofchunk_idxs:
-                token_idx = endofchunk_idx + 1
-                while (
-                    token_idx < labels.shape[1]
-                    and labels[i][token_idx] != media_token_id
-                ):
-                    labels[i][token_idx] = -100
-                    token_idx += 1
+        #     # get index of all endofchunk tokens in the sequence
+        #     endofchunk_idxs = torch.where(labels[i] == endofchunk_token_id)[0]
+        #     for endofchunk_idx in endofchunk_idxs:
+        #         token_idx = endofchunk_idx + 1
+        #         while (
+        #             token_idx < labels.shape[1]
+        #             and labels[i][token_idx] != media_token_id
+        #         ):
+        #             labels[i][token_idx] = -100
+        #             token_idx += 1
 
-        labels[labels == media_token_id] = -100
-        labels = labels.to(device_id)
+        # labels[labels == media_token_id] = -100
+        # labels = labels.to(device_id)
 
-        # gradient accumulation w/ fsdp cpu offloading requires a no_sync context manager
-        with autocast():
-            loss_mmc4 = model(
-                vision_x=images,
-                lang_x=input_ids.to(device_id),
-                attention_mask=attention_mask.to(device_id),
-                labels=labels,
-            )[0]
+        # # gradient accumulation w/ fsdp cpu offloading requires a no_sync context manager
+        # with autocast():
+        #     loss_mmc4 = model(
+        #         vision_x=images,
+        #         lang_x=input_ids.to(device_id),
+        #         attention_mask=attention_mask.to(device_id),
+        #         labels=labels,
+        #     )[0]
 
-            # if loss is nan, skip this batch
-            # this hack of skipping the batch is not FSDP-compatible
-            if torch.isnan(loss_mmc4):
-                print("loss is nan, skipping this batch")
-                print("input_ids: ", tokenizer.batch_decode(input_ids))
-                print("labels: ", labels)
-                print("images: ", images)
-                optimizer.zero_grad(set_to_none=True)
-                continue
+        #     # if loss is nan, skip this batch
+        #     # this hack of skipping the batch is not FSDP-compatible
+        #     if torch.isnan(loss_mmc4):
+        #         print("loss is nan, skipping this batch")
+        #         print("input_ids: ", tokenizer.batch_decode(input_ids))
+        #         print("labels: ", labels)
+        #         print("images: ", images)
+        #         optimizer.zero_grad(set_to_none=True)
+        #         continue
 
-        divided_loss_mmc4 = loss_mmc4 / args.gradient_accumulation_steps
-        (divided_loss_mmc4 * args.loss_multiplier_mmc4).backward()
+        # divided_loss_mmc4 = loss_mmc4 / args.gradient_accumulation_steps
+        # (divided_loss_mmc4 * args.loss_multiplier_mmc4).backward()
 
         if (not args.freeze_lm_embeddings) and (
             not args.fsdp or args.fsdp_use_orig_params
@@ -232,25 +241,25 @@ def train_one_epoch(
                     * args.batch_size_laion
                     / step_time_m.val
                 )
-                c4_samples_per_second = (
-                    args.gradient_accumulation_steps
-                    * args.batch_size_mmc4
-                    * args.world_size
-                    / step_time_m.val
-                )
-                c4_samples_per_second_per_gpu = (
-                    args.gradient_accumulation_steps
-                    * args.batch_size_mmc4
-                    / step_time_m.val
-                )
+                # c4_samples_per_second = (
+                #     args.gradient_accumulation_steps
+                #     * args.batch_size_mmc4
+                #     * args.world_size
+                #     / step_time_m.val
+                # )
+                # c4_samples_per_second_per_gpu = (
+                #     args.gradient_accumulation_steps
+                #     * args.batch_size_mmc4
+                #     / step_time_m.val
+                # )
                 wandb.log(
                     {
                         "data_time": data_time_m.avg,
                         "step_time": step_time_m.avg,
                         "laion_samples_per_second": laion_samples_per_second,
                         "laion_samples_per_second_per_gpu": laion_samples_per_second_per_gpu,
-                        "c4_samples_per_second": c4_samples_per_second,
-                        "c4_samples_per_second_per_gpu": c4_samples_per_second_per_gpu,
+                        # "c4_samples_per_second": c4_samples_per_second,
+                        # "c4_samples_per_second_per_gpu": c4_samples_per_second_per_gpu,
                         "lr": optimizer.param_groups[0]["lr"],
                     },
                     commit=False,
@@ -265,16 +274,16 @@ def train_one_epoch(
                     },
                     commit=False,
                 )
-                wandb.log(
-                    {"loss_mmc4": loss_mmc4.item(), "global_step": global_step},
-                    commit=True,
-                )
+                # wandb.log(
+                #     {"loss_mmc4": loss_mmc4.item(), "global_step": global_step},
+                #     commit=True,
+                # )
 
         # Log loss to console
-        if ((num_steps + 1) % args.logging_steps == 0) and args.rank == 0:
-            print(
-                f"Step {num_steps+1}/{num_batches_per_epoch} of epoch {epoch+1}/{args.num_epochs} complete. Loss LAION: {loss_laion.item():.3f} // Loss MMC4: {loss_mmc4.item():.3f}"
-            )
+        # if ((num_steps + 1) % args.logging_steps == 0) and args.rank == 0:
+        #     print(
+        #         f"Step {num_steps+1}/{num_batches_per_epoch} of epoch {epoch+1}/{args.num_epochs} complete. Loss LAION: {loss_laion.item():.3f} // Loss MMC4: {loss_mmc4.item():.3f}"
+        #     )
 
 
 class AverageMeter(object):

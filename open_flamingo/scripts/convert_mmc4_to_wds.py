@@ -39,7 +39,7 @@ def main():
 
     doc_shards = list(braceexpand.braceexpand(args.zip_files))
 
-    with wds.ShardWriter(args.output_dir + "/%09d.tar") as sink:
+    with wds.ShardWriter(args.output_dir + "/%03d0.tar") as sink:
         for idx in range(len(doc_shards)):
             # Open the ZIP archive and extract the JSON file
             with zipfile.ZipFile(doc_shards[idx], "r") as zip_file:
