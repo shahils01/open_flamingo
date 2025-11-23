@@ -144,3 +144,15 @@ wandb
 cache/
 
 __*.sh
+
+# Ignore dataset and large local files
+datasets/
+data/mmc4_data/
+PATH/
+*.parquet
+*.tar
+
+# Byte-compiled / cache files
+__pycache__/
+*.pyc
+

@@ -40,7 +40,7 @@ from torch.distributed.distributed_c10d import _get_default_group
 import functools
 
 from open_flamingo import create_model_and_transforms
-
+from huggingface_hub import hf_hub_download
 
 def random_seed(seed=42, rank=0):
     torch.manual_seed(seed + rank)
@@ -216,6 +216,13 @@ def main():
         help="save checkpoints to wandb",
     )
 
+    parser.add_argument(
+        "--load_pretrained_openflamingo",
+        default=False,
+        action="store_true",
+        help="load official traned checkpoint of openflamingo to retrain",
+    )
+
     args = parser.parse_args()
 
     # Validate args
@@ -299,18 +306,14 @@ def main():
         if args.rank == 0:
             print(f"Loading checkpoint from {args.resume_from_checkpoint}")
         checkpoint = torch.load(args.resume_from_checkpoint, map_location="cpu")
-        print("Finished loading checkpoint")
         msd = checkpoint["model_state_dict"]
-        print("Finished loading msd")
         msd = {k.replace("module.", ""): v for k, v in msd.items()}
-        print("Finished replacing msd")
 
         resume_from_epoch = checkpoint["epoch"] + 1
 
         # for fsdp, only one rank needs to load the state dict
         if not args.fsdp or args.rank == 0:
             model.load_state_dict(msd, False)
-            print("Finished loading model msd")
 
     # Initialize FSDP / DDP, and ensure the model is on GPU
     print(f"Initializing distributed training with {args.world_size} GPUs.")
@@ -420,7 +423,7 @@ def main():
         )
 
     # load optimizer checkpoint
-    if args.resume_from_checkpoint is not None:
+    if args.resume_from_checkpoint is not None and not args.load_pretrained_openflamingo:
         osd = checkpoint["optimizer_state_dict"]
         if args.fsdp:
             osd = FSDP.optim_state_dict_to_load(osd, ddp_model, optimizer)

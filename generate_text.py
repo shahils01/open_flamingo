@@ -1,6 +1,7 @@
 import torch
-from PIL import Image
 import requests
+from PIL import Image
+from huggingface_hub import hf_hub_download
 from open_flamingo import create_model_and_transforms
 
 model, image_processor, tokenizer = create_model_and_transforms(
@@ -12,13 +13,16 @@ model, image_processor, tokenizer = create_model_and_transforms(
     cache_dir="PATH/TO/CACHE/DIR",  # Defaults to ~/.cache
 )
 
-checkpoint_path = (
-    "/scratch/shahils/open_flamingo/OpenFlamingo-3B-vitl-mpt1b/checkpoint_479.pt"
-)
-checkpoint = torch.load(checkpoint_path, map_location="cpu")
-msd = checkpoint["model_state_dict"]
-msd = {k.replace("module.", ""): v for k, v in msd.items()}
-model.load_state_dict(msd, False)
+# checkpoint_path = (
+#     "/scratch/shahils/open_flamingo/OpenFlamingo-3B-vitl-mpt1b/checkpoint_479.pt"
+# )
+# checkpoint = torch.load(checkpoint_path, map_location="cpu")
+# msd = checkpoint["model_state_dict"]
+# msd = {k.replace("module.", ""): v for k, v in msd.items()}
+# model.load_state_dict(msd, False)
+
+checkpoint_path = hf_hub_download("openflamingo/OpenFlamingo-3B-vitl-mpt1b", "checkpoint.pt")
+model.load_state_dict(torch.load(checkpoint_path), strict=False)
 
 """
 Step 1: Load images
